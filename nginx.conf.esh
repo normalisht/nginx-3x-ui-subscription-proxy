@@ -11,14 +11,9 @@ http {
     resolver 127.0.0.11 valid=5s ipv6=off;
 
     server {
-        # Включение или отключение TLS
-        <% if [ "$TLS_MODE" != "off" ]; then -%>
-        listen <%= $SITE_PORT %> ssl;
-        ssl_certificate /etc/nginx/ssl/fullchain.pem;
-        ssl_certificate_key /etc/nginx/ssl/privkey.pem;
-        <% else -%>
-        listen <%= $SITE_PORT %>;
-        <% fi; -%>
+        listen 443 ssl;
+        ssl_certificate /etc/letsencrypt/live/<%= $SITE_HOST %>/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/<%= $SITE_HOST %>/privkey.pem;
 
         server_name <%= $SITE_HOST %>;
 
@@ -30,9 +25,27 @@ http {
             content_by_lua_file /etc/nginx/lua/config_fetcher.lua;
         }
 
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+
         # Заглушка для других запросов
         location / {
             return 404;
+        }
+    }
+
+    server {
+        listen 80;
+
+        server_name <%= $SITE_HOST %>;
+
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+
+        location / {
+            return 301 https://$host$request_uri;
         }
     }
 }

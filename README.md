@@ -36,10 +36,7 @@ Edit the `.env` file and fill in the following variables with your own data:
 
 | Variable        | Description                                                                                     |
 |-----------------|-------------------------------------------------------------------------------------------------|
-| `TLS_MODE`  | Enables or disables SSL. Default set `off`. When set to `on`, SSL certificates must be generated (e.g., via Certbot), and their paths must be specified in the `PATH_SSL_KEY` variable. |
-| `PATH_SSL_KEY`  | Path to the directory containing your SSL certificate and private key (e.g., `/etc/letsencrypt/live/your_site/`). |
 | `SITE_HOST`     | Domain name for your Nginx server (e.g., `subserver.example`).                                           |
-| `SITE_PORT`     | Port number where Nginx will listen for requests (e.g., `443`).                                |
 | `SERVERS`       | List of 3x-UI server URLs to aggregate subscriptions from (e.g., `https://server1.com/sub/ https://server2.com/sub/`). |
 | `SUB`           | Static part of the subscription path (e.g., `sub`).                                             |
 
@@ -63,18 +60,14 @@ This will build and start the Nginx container with the provided configuration.
 
 ## How It Works
 - The proxy dynamically fetches subscription configurations from the servers listed in `SERVERS`.
-- It listens on the domain and port specified in `SITE_HOST` and `SITE_PORT`.
-- SSL certificates are loaded from the path specified in `PATH_SSL_KEY`.
+- It listens on the domain and port specified in `SITE_HOST`.
 
 ## Example Configuration
 Here is an example `.env` file:
 ```dotenv
-PATH_SSL_KEY=/etc/letsencrypt/live/example.com/
 SITE_HOST=example.com
-SITE_PORT=443
 SERVERS="https://server1.com/sub/ https://server2.com/sub/"
 SUB=sub
-TLS_MODE=off
 ```
 
 ## License
