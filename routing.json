@@ -14,7 +14,26 @@
     "dns.google": "8.8.8.8"
   },
   "DirectSites": [
-    "geosite:ru, geosite:category-ads-all, geosite:category-ru"
+    "geosite:category-ads-all",
+    "geosite:category-ru",
+    "geosite:win-update",
+    "geosite:win-spy",
+    "geosite:win-extra",
+    "domain:ru",
+    "domain:su",
+    "domain:рф",
+    "libria.fun",
+    "anilibria.top",
+    "animego.me",
+    "boom-img.com",
+    "ya-ligt.com",
+    "cdngos.com",
+    "aniboom.one",
+    "habrastorage.org",
+    "habr.com",
+    "ya-ligh.com",
+    "time.aero",
+    "inappstory.com"
   ],
   "DirectIp": [
     "geoip:ru",
