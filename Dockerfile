@@ -1,11 +1,8 @@
 # Используем OpenResty на базе Alpine
 FROM openresty/openresty:alpine-fat
 
-ARG SERVERS
-
 # Прокидываем переменные
 ENV SITE_HOST=localhost
-ENV SERVERS=${SERVERS}
 ENV SUB=sub
 
 # Выставляем порты
@@ -19,13 +16,10 @@ COPY nginx.conf.esh /usr/local/openresty/nginx/conf/
 RUN apk upgrade  \
     && apk add --no-cache esh certbot openssl
 
-# Устанавливаем Lua-библиотеку resty-http
-RUN luarocks install lua-resty-http
-
 # Копируем конфигурацию
-COPY config_fetcher.lua /etc/nginx/lua/
 COPY crontab.txt /etc/crontabs/root
 COPY update-certs.sh entrypoint.sh /usr/local/bin/
+COPY routing.json /var/www/
 
 # Устанавливаем права на файлы
 RUN chmod -R 755 /usr/local/openresty/nginx/conf/ \

@@ -10,19 +10,32 @@ http {
 
     resolver 127.0.0.11 valid=5s ipv6=off;
 
+    upstream python_backend {
+        server python:8080;
+    }
+
     server {
         listen 443 ssl;
+        #listen 8001;
         ssl_certificate /etc/letsencrypt/live/<%= $SITE_HOST %>/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/<%= $SITE_HOST %>/privkey.pem;
-
+        #server_name localhost;
         server_name <%= $SITE_HOST %>;
+
+        # Для получени routing файлов
+        location /routing/ {
+            alias /var/www/;
+        }
 
         # Обработка запросов с фиксированной частью пути и переменным sub_id
         location ~ ^/<%= $SUB %>/([^/]+)/?$ {
-            # Извлекаем sub_id из URL
-            set $sub_id $1;
-
-            content_by_lua_file /etc/nginx/lua/config_fetcher.lua;
+            proxy_pass http://python_backend$request_uri;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 30s;
+            proxy_read_timeout 60s;
         }
 
         location /.well-known/acme-challenge/ {

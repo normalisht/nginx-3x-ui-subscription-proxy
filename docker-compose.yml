@@ -1,4 +1,21 @@
 services:
+  python:
+    build:
+      context: .
+      dockerfile: Dockerfile_python
+    container_name: python_config_fetcher
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -q --spider http://localhost:8080/sub/health || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: always
+    networks:
+      - proxy_network
+
   nginx:
     build:
       context: .
@@ -13,7 +30,16 @@ services:
       - letsencrypt:/etc/letsencrypt/
       - certbot:/var/www/certbot/
     restart: always
+    depends_on:
+      python:
+        condition: service_healthy
+    networks:
+      - proxy_network
 
 volumes:
   letsencrypt:
   certbot:
+
+networks:
+  proxy_network:
+    driver: bridge

@@ -1,16 +1,13 @@
 # nginx-3x-ui-subscription-proxy
 
-🇷🇺 [Русская версия README](README_RU.md)
-
-A reverse proxy configuration for Nginx to dynamically handle and aggregate [3x-UI](https://github.com/MHSanaei/3x-ui?tab=readme-ov-file) subscriptions from multiple servers.
-
-Конфигурация Nginx для объединения подписок с нескольких серверов [3x-UI](https://github.com/MHSanaei/3x-ui?tab=readme-ov-file).
-
-### Flow
-[![Flow](https://i.postimg.cc/pX59gV8h/temp-Image1-Z8b-SK.avif)](https://postimg.cc/8jDPvSZN)
+.py
 
 ## Overview
 This project allows you to set up an Nginx-based reverse proxy that fetches and aggregates subscription configurations from multiple 3x-UI servers. It simplifies subscription management by unifying configurations in a single endpoint.
+
+The proxy uses a multi-service architecture:
+- **Nginx**: Listens on ports 80/443, handles SSL termination, and proxies subscription requests to the Python backend
+- **Python**: Runs as a standalone HTTP server (port 8080) that fetches and aggregates subscription configurations from multiple 3x-UI servers
 
 ## Important Notes
 
@@ -39,6 +36,7 @@ Edit the `.env` file and fill in the following variables with your own data:
 | `SITE_HOST`     | Domain name for your Nginx server (e.g., `subserver.example`).                                           |
 | `SERVERS`       | List of 3x-UI server URLs to aggregate subscriptions from (e.g., `https://server1.com/sub/ https://server2.com/sub/`). |
 | `SUB`           | Static part of the subscription path (e.g., `sub`).                                             |
+| `PORT`          | Port for the Python server to listen on (default: 8080).                                             |
 
 #### Subscription URL Format
 
@@ -56,11 +54,30 @@ Run the following command to start the application:
 docker compose up -d
 ```
 
-This will build and start the Nginx container with the provided configuration.
+This will build and start both the Nginx and Python containers with the provided configuration.
 
 ## How It Works
-- The proxy dynamically fetches subscription configurations from the servers listed in `SERVERS`.
-- It listens on the domain and port specified in `SITE_HOST`.
+- Nginx listens on ports 80 and 443 (SSL)
+- Subscription requests to `/sub/<subscription_ID>` are proxied to the Python service on port 8080
+- The Python service fetches configurations from all servers listed in `SERVERS`
+- Configurations are decoded (base64), combined, re-encoded, and returned to the client
+- SSL certificates are managed automatically by Certbot
+
+## Architecture
+```
+┌─────────────────┐     HTTPS /sub/*     ┌──────────────────┐
+│                 │ ──────────────────────▶ │                  │
+│     Nginx       │   HTTP proxy_pass      │     Python       │
+│  (ports 80/443) │ ◀───────────────────── │  (port 8080)     │
+│                 │  HTTP to backend       │                  │
+└─────────────────┘                         └──────────────────┘
+      │                                                            │
+      │ SSL termination                                            │
+      │ Certbot integration                                        │
+      │                                                            │
+      └────────────────────────────────────────────────────────────┘
+                              DNS: python
+```
 
 ## Example Configuration
 Here is an example `.env` file:
@@ -68,6 +85,7 @@ Here is an example `.env` file:
 SITE_HOST=example.com
 SERVERS="https://server1.com/sub/ https://server2.com/sub/"
 SUB=sub
+PORT=8080
 ```
 
 ## License
