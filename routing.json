@@ -19,9 +19,6 @@
     "geosite:win-update",
     "geosite:win-spy",
     "geosite:win-extra",
-    "domain:ru",
-    "domain:su",
-    "domain:рф",
     "libria.fun",
     "anilibria.top",
     "animego.me",
@@ -33,7 +30,10 @@
     "habr.com",
     "ya-ligh.com",
     "time.aero",
-    "inappstory.com"
+    "inappstory.com",
+    "regexp:.*\\.ru$",
+    "regexp:.*\\.su$",
+    "regexp:.*\\.xn--p1ai$"
   ],
   "DirectIp": [
     "geoip:ru",
