@@ -25,8 +25,8 @@ def get_servers():
 def fetch_configs(servers, sub_id):
     site_host = os.environ.get("SITE_HOST")
     configs = [
-        f'://autorouting/onadd/https://{site_host}/routing/routing.json\n'
-        f'://routing/onadd/https://{site_host}/routing/routing.json\n'
+        f'://autorouting/onadd/https://{site_host}/routing/routing.json\n',
+        f'://routing/onadd/https://{site_host}/routing/routing.json\n',
     ]
     for base_url in servers:
         url = base_url.rstrip("/") + "/" + sub_id
