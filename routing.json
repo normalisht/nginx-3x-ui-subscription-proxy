@@ -49,13 +49,11 @@
     "geosite:steam",
     "geosite:twitch",
     "geosite:pinterest",
-    "geosite:faceit",
-    "geosite:torrent"
+    "geosite:faceit"
   ],
   "DirectIp": [
     "geoip:ru",
-    "geoip:private",
-    "geoip:direct"
+    "geoip:private"
   ],
   "ProxySites": [],
   "ProxyIp": [],
