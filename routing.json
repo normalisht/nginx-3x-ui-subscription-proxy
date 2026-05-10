@@ -41,7 +41,6 @@
     "regexp:.*\\.ru$",
     "regexp:.*\\.su$",
     "regexp:.*\\.xn--p1ai$",
-    "geosite:whitelist",
     "geosite:microsoft",
     "geosite:apple",
     "geosite:epicgames",
@@ -56,8 +55,7 @@
   "DirectIp": [
     "geoip:ru",
     "geoip:private",
-    "geoip:direct",
-    "geoip:whitelist"
+    "geoip:direct"
   ],
   "ProxySites": [],
   "ProxyIp": [],
