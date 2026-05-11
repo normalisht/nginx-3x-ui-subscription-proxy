@@ -53,7 +53,8 @@
     "geosite:steam",
     "geosite:twitch",
     "geosite:pinterest",
-    "geosite:faceit"
+    "geosite:faceit",
+    "geosite:github"
   ],
   "DirectIp": [
     "geoip:ru",
