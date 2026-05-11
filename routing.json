@@ -63,8 +63,7 @@
   "ProxySites": [],
   "ProxyIp": [],
   "BlockSites": [
-    "geosite:category-ads",
-    "geosite:win-spy"
+    "geosite:category-ads"
   ],
   "BlockIp": [],
   "DomainStrategy": "IPIfNonMatch",
