@@ -39,7 +39,7 @@
     "inappstory.com",
     "regexp:.*\\.ru$",
     "regexp:.*\\.su$",
-    "regexp:.*\\.by",
+    "regexp:.*\\.by$",
     "regexp:.*\\.xn--p1ai$",
     "regexp:.*\\.xn--90ais$",
     "geosite:microsoft",
@@ -54,6 +54,7 @@
   ],
   "DirectIp": [
     "geoip:ru",
+    "geoip:by",
     "geoip:private"
   ],
   "ProxySites": [],
