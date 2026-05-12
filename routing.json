@@ -20,8 +20,8 @@
   },
   "DirectSites": [
     "geosite:category-ru",
+    "geosite:geosite:ru-available-only-inside",
     "geosite:win-update",
-    "geosite:win-spy",
     "geosite:win-extra",
     "libria.fun",
     "anilibria.top",
@@ -54,17 +54,28 @@
     "geosite:twitch",
     "geosite:pinterest",
     "geosite:faceit",
-    "geosite:github"
+    "geosite:github",
+    "geosite:private",
+    "geosite:pinterest",
+    "domain:ipify.org",
+    "domain:checkip.amazonaws.com",
+    "domain:ifconfig.me",
+    "domain:ipapi.is",
+    "domain:iplocate.io",
+    "domain:ip.sb"
   ],
   "DirectIp": [
     "geoip:ru",
+    "geoip:ru-whitelist",
+    "geoip:yandex",
     "geoip:by",
     "geoip:private"
   ],
   "ProxySites": [],
   "ProxyIp": [],
   "BlockSites": [
-    "geosite:category-ads"
+    "geosite:category-ads",
+    "geosite:win-spy"
   ],
   "BlockIp": [],
   "DomainStrategy": "IPIfNonMatch",
