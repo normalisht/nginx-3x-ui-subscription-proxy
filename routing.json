@@ -20,7 +20,7 @@
   },
   "DirectSites": [
     "geosite:category-ru",
-    "geosite:geosite:ru-available-only-inside",
+    "geosite:ru-available-only-inside",
     "geosite:win-update",
     "geosite:win-extra",
     "domain:libria.fun",
