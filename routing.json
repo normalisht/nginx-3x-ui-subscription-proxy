@@ -61,7 +61,9 @@
     "domain:cdnvideohub.com",
     "domain:vkuser.net",
     "domain:mycdn.me",
-    "domain:inappstory.com"
+    "domain:inappstory.com",
+    "domain:ozonusercontent.com",
+    "domain:rozetked.me"
   ],
   "DirectIp": [
     "geoip:ru",
