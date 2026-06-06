@@ -39,7 +39,8 @@
     "geosite:pinterest",
     "geosite:faceit",
     "geosite:private",
-    "geosite:pinterest",
+    "geosite:yandex",
+    "geosite:vk",
     "regexp:.*\\.ru$",
     "regexp:.*\\.su$",
     "regexp:.*\\.by$",
@@ -63,6 +64,7 @@
     "domain:mycdn.me",
     "domain:inappstory.com",
     "domain:ozonusercontent.com",
+    "domain:yandex.net",
     "domain:rozetked.me"
   ],
   "DirectIp": [
