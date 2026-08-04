@@ -65,7 +65,11 @@
     "domain:inappstory.com",
     "domain:ozonusercontent.com",
     "domain:yandex.net",
-    "domain:rozetked.me"
+    "domain:rozetked.me",
+    "domain:ggsel.net",
+    "domain:ggsel.com",
+    "domain:progressier.app",
+    "domain:pwa.xyz"
   ],
   "DirectIp": [
     "geoip:ru",
