@@ -71,7 +71,9 @@
     "domain:progressier.app",
     "domain:tripcdn.com",
     "domain:trip.com",
-    "domain:pwa.xyz"
+    "domain:pwa.xyz",
+    "domain:stepik.org",
+    "domain:stepik.net"
   ],
   "DirectIp": [
     "geoip:ru",

@@ -1,0 +1,101 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  APP_DIR: /root/nginx-3x-ui-subscription-proxy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up SSH with host verification
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      
+      - name: Add server to known_hosts
+        if: secrets.SSH_KNOWN_HOSTS != ''
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+      
+      - name: Deploy via SSH
+        id: deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          script: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting deployment..."
+            
+            # Create app directory if not exists
+            mkdir -p ${{ env.APP_DIR }}
+            cd ${{ env.APP_DIR }}
+            
+            # Save current state for rollback
+            CURRENT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "none")
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Current commit: $CURRENT_COMMIT"
+            
+            # Pull latest code
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pulling latest code..."
+            git init 2>/dev/null || true
+            git remote set-url origin ${{ github.repositoryUrl }} 2>/dev/null || true
+            git fetch origin 2>/dev/null || true
+            git checkout main 2>/dev/null || git checkout -b main
+            git pull origin main
+            
+            # Copy .env file if provided
+            if [ -n "${{ secrets.ENV_FILE_BASE64 }}" ]; then
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Updating .env file..."
+              echo "${{ secrets.ENV_FILE_BASE64 }}" | base64 -d > .env
+            fi
+            
+            # Restart with cleanup
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Restarting services..."
+            docker compose up -d --remove-orphans --build
+            
+            # Health check for python service (config fetcher)
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running health check..."
+            HEALTH_CHECK_RETRIES=30
+            HEALTH_CHECK_INTERVAL=10
+            HEALTH_CHECK_PASSED=false
+            
+            for ((i=1; i<=HEALTH_CHECK_RETRIES; i++)); do
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Health check attempt $i/$HEALTH_CHECK_RETRIES..."
+              if docker compose exec -T python curl -sf http://localhost:8080/health > /dev/null 2>&1; then
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Health check passed!"
+                HEALTH_CHECK_PASSED=true
+                break
+              fi
+              sleep $HEALTH_CHECK_INTERVAL
+            done
+            
+            if [ "$HEALTH_CHECK_PASSED" = false ]; then
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Health check failed after $HEALTH_CHECK_RETRIES attempts"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Rolling back..."
+              git checkout "$CURRENT_COMMIT"
+              docker compose pull
+              docker compose up -d
+              exit 1
+            fi
+            
+            # Cleanup old images
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cleaning up old images..."
+            docker image prune -af --filter "until=24h"
+            
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Deployment completed successfully!"
