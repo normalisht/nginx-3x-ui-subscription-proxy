@@ -44,6 +44,7 @@ cp .env.template .env
 | `SERVERS`      | Список URL серверов 3x-UI, с которых будут агрегироваться подписки (например, `https://server1.com/sub/ https://server2.com/sub/`).                            |
 | `SUB`          | Статическая часть пути подписки для прокси сервера (например, `sub`).                                                                                                             |
 | `PORT`         | Порт, на котором будет работать Python-сервер (по умолчанию: 8080).                                                                                                             |
+| `EXTERNAL_SUBSCRIPTIONS` | Список полных ссылок на сторонние подписки (например, VPN-сервисы), которые уже включают в себя ID и отдают base64 напрямую — в отличие от `SERVERS`, к ним ничего не дописывается (например, `https://vpn-service.com/sub/abc123 https://another.com/sub/xyz789`). Необязательная переменная. |
 
 #### Формат ссылки подписки
 
@@ -73,7 +74,7 @@ docker compose up -d
 
 - Nginx слушает порты 80 и 443 (SSL)
 - Запросы подписок на `/sub/<subscription_ID>` проксируются на Python-сервис на порту 8080
-- Python-сервис получает конфигурации с серверов, перечисленных в `SERVERS`
+- Python-сервис получает конфигурации с серверов, перечисленных в `SERVERS` (к каждому URL дописывается `subscription_ID`), а также со сторонних ссылок из `EXTERNAL_SUBSCRIPTIONS` (запрашиваются как есть, без изменений)
 - Конфигурации декодируются (base64), объединяются, повторно кодируются и возвращаются клиенту
 - SSL-сертификаты управляются автоматически через Certbot
 
@@ -86,6 +87,7 @@ SITE_HOST=example.com
 SERVERS="https://server1.com/sub/ https://server2.com/sub/"
 SUB=sub
 PORT=8080
+EXTERNAL_SUBSCRIPTIONS="https://vpn-service.com/sub/abc123"
 ```
 
 ## Лицензия

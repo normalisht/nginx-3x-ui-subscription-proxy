@@ -15,38 +15,57 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def get_servers():
-    servers_str = os.environ.get("SERVERS")
-    if not servers_str:
-        print("Error: No servers found in environment variable SERVERS", file=sys.stderr)
-        sys.exit(1)
+    servers_str = os.environ.get("SERVERS", "")
     return servers_str.split()
 
 
-def fetch_configs(servers, sub_id):
-    site_host = os.environ.get("SITE_HOST")
-    configs = [
-        f'://autorouting/onadd/https://{site_host}/routing/routing.json\n',
-        f'://routing/onadd/https://{site_host}/routing/routing.json\n',
-    ]
+def get_external_subscriptions():
+    external_str = os.environ.get("EXTERNAL_SUBSCRIPTIONS", "")
+    return external_str.split()
+
+
+def fetch_and_decode(url):
+    try:
+        response = requests.get(url, timeout=10, verify=False)
+    except Exception as e:
+        print(f"Error: Request failed for {url}: {e}", file=sys.stderr)
+        return None
+
+    if response.status_code != 200:
+        print(f"Error: Failed to fetch from {url}, status: {response.status_code}", file=sys.stderr)
+        return None
+
+    text = response.text.strip()
+    padded = text + "=" * (-len(text) % 4)
+    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
+        try:
+            return decoder(padded).decode("utf-8")
+        except Exception:
+            continue
+
+    print(f"Error: Failed to decode base64 from {url}", file=sys.stderr)
+    return None
+
+
+def fetch_configs(servers, sub_id, external_subscriptions=None):
+    configs = []
+    if os.environ.get("ROUTING_ENABLED") == "1":
+        site_host = os.environ.get("SITE_HOST")
+        configs.extend([
+            f'://autorouting/onadd/https://{site_host}/routing/routing.json\n',
+            f'://routing/onadd/https://{site_host}/routing/routing.json\n',
+        ])
+
     for base_url in servers:
         url = base_url.rstrip("/") + "/" + sub_id
-        try:
-            try:
-                response = requests.get(url, timeout=10, verify=False)
-            except Exception as e:
-                print(f"Error: Request failed for {url}: {e}", file=sys.stderr)
-                continue
+        decoded_config = fetch_and_decode(url)
+        if decoded_config is not None:
+            configs.append(decoded_config)
 
-            if response.status_code == 200:
-                try:
-                    decoded_config = base64.b64decode(response.text).decode("utf-8")
-                    configs.append(decoded_config)
-                except Exception:
-                    print(f"Error: Failed to decode base64 from {url}", file=sys.stderr)
-            else:
-                print(f"Error: Failed to fetch from {url}, status: {response.status_code}", file=sys.stderr)
-        except requests.RequestException as e:
-            print(f"Error: Request failed for {url}: {e}", file=sys.stderr)
+    for url in external_subscriptions or []:
+        decoded_config = fetch_and_decode(url)
+        if decoded_config is not None:
+            configs.append(decoded_config)
 
     return configs
 
@@ -75,7 +94,8 @@ class ConfigHandler(BaseHTTPRequestHandler):
             return
         sub_id = match.group(1)
         servers = get_servers()
-        configs = fetch_configs(servers, sub_id)
+        external_subscriptions = get_external_subscriptions()
+        configs = fetch_configs(servers, sub_id, external_subscriptions)
         if configs:
             encoded_combined = combine_and_encode(configs)
             self.send_response(200)

@@ -37,6 +37,7 @@ Edit the `.env` file and fill in the following variables with your own data:
 | `SERVERS`       | List of 3x-UI server URLs to aggregate subscriptions from (e.g., `https://server1.com/sub/ https://server2.com/sub/`). |
 | `SUB`           | Static part of the subscription path (e.g., `sub`).                                             |
 | `PORT`          | Port for the Python server to listen on (default: 8080).                                             |
+| `EXTERNAL_SUBSCRIPTIONS` | Optional. List of full third-party subscription URLs (e.g., other VPN services) that already include the ID and return base64 directly — unlike `SERVERS`, nothing is appended to these (e.g., `https://vpn-service.com/sub/abc123 https://another.com/sub/xyz789`). |
 
 #### Subscription URL Format
 
@@ -59,7 +60,7 @@ This will build and start both the Nginx and Python containers with the provided
 ## How It Works
 - Nginx listens on ports 80 and 443 (SSL)
 - Subscription requests to `/sub/<subscription_ID>` are proxied to the Python service on port 8080
-- The Python service fetches configurations from all servers listed in `SERVERS`
+- The Python service fetches configurations from all servers listed in `SERVERS` (appending `subscription_ID` to each URL) and from third-party links listed in `EXTERNAL_SUBSCRIPTIONS` (fetched as-is)
 - Configurations are decoded (base64), combined, re-encoded, and returned to the client
 - SSL certificates are managed automatically by Certbot
 
@@ -86,6 +87,7 @@ SITE_HOST=example.com
 SERVERS="https://server1.com/sub/ https://server2.com/sub/"
 SUB=sub
 PORT=8080
+EXTERNAL_SUBSCRIPTIONS="https://vpn-service.com/sub/abc123"
 ```
 
 ## License
