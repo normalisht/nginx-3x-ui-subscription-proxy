@@ -24,9 +24,23 @@ def get_external_subscriptions():
     return external_str.split()
 
 
-def fetch_and_decode(url):
+def get_external_subscription_headers():
+    raw = os.environ.get("EXTERNAL_SUBSCRIPTION_HEADERS", "")
+    if not raw:
+        return {}
+    headers = {}
+    for entry in re.split(r"\r?\n|;;", raw):
+        entry = entry.strip()
+        if not entry or ":" not in entry:
+            continue
+        key, value = entry.split(":", 1)
+        headers[key.strip()] = value.strip()
+    return headers
+
+
+def fetch_and_decode(url, headers=None):
     try:
-        response = requests.get(url, timeout=10, verify=False)
+        response = requests.get(url, timeout=10, verify=False, headers=headers)
     except Exception as e:
         print(f"Error: Request failed for {url}: {e}", file=sys.stderr)
         return None
@@ -47,7 +61,7 @@ def fetch_and_decode(url):
     return None
 
 
-def fetch_configs(servers, sub_id, external_subscriptions=None):
+def fetch_configs(servers, sub_id, external_subscriptions=None, external_headers=None):
     configs = []
     if os.environ.get("ROUTING_ENABLED") == "1":
         site_host = os.environ.get("SITE_HOST")
@@ -63,7 +77,7 @@ def fetch_configs(servers, sub_id, external_subscriptions=None):
             configs.append(decoded_config)
 
     for url in external_subscriptions or []:
-        decoded_config = fetch_and_decode(url)
+        decoded_config = fetch_and_decode(url, headers=external_headers)
         if decoded_config is not None:
             configs.append(decoded_config)
 
@@ -95,7 +109,8 @@ class ConfigHandler(BaseHTTPRequestHandler):
         sub_id = match.group(1)
         servers = get_servers()
         external_subscriptions = get_external_subscriptions()
-        configs = fetch_configs(servers, sub_id, external_subscriptions)
+        external_headers = get_external_subscription_headers()
+        configs = fetch_configs(servers, sub_id, external_subscriptions, external_headers)
         if configs:
             encoded_combined = combine_and_encode(configs)
             self.send_response(200)

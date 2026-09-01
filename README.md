@@ -38,6 +38,7 @@ Edit the `.env` file and fill in the following variables with your own data:
 | `SUB`           | Static part of the subscription path (e.g., `sub`).                                             |
 | `PORT`          | Port for the Python server to listen on (default: 8080).                                             |
 | `EXTERNAL_SUBSCRIPTIONS` | Optional. List of full third-party subscription URLs (e.g., other VPN services) that already include the ID and return base64 directly — unlike `SERVERS`, nothing is appended to these (e.g., `https://vpn-service.com/sub/abc123 https://another.com/sub/xyz789`). |
+| `EXTERNAL_SUBSCRIPTION_HEADERS` | Optional. Custom HTTP headers sent by the backend itself (not forwarded from the real client) when requesting `EXTERNAL_SUBSCRIPTIONS` — e.g. to mimic a real VPN client's `User-Agent`/`Hwid`. Format: `Key: Value`, multiple headers separated by `;;` or newline, e.g. `User-Agent: Happ/2.4.1 (Android 13; SDK 33);;Hwid: 1234567890abcdef`. |
 
 #### Subscription URL Format
 
