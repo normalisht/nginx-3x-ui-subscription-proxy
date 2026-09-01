@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+BASE64_RE = re.compile(r"^[A-Za-z0-9+/_=-]+$")
+
 def get_servers():
     servers_str = os.environ.get("SERVERS", "")
     return servers_str.split()
@@ -50,6 +52,9 @@ def fetch_and_decode(url, headers=None):
         return None
 
     text = response.text.strip()
+    if not text or not BASE64_RE.match(text):
+        return text
+
     padded = text + "=" * (-len(text) % 4)
     for decoder in (base64.b64decode, base64.urlsafe_b64decode):
         try:
@@ -57,8 +62,7 @@ def fetch_and_decode(url, headers=None):
         except Exception:
             continue
 
-    print(f"Error: Failed to decode base64 from {url}", file=sys.stderr)
-    return None
+    return text
 
 
 def fetch_configs(servers, sub_id, external_subscriptions=None, external_headers=None):
@@ -73,13 +77,13 @@ def fetch_configs(servers, sub_id, external_subscriptions=None, external_headers
     for base_url in servers:
         url = base_url.rstrip("/") + "/" + sub_id
         decoded_config = fetch_and_decode(url)
-        if decoded_config is not None:
-            configs.append(decoded_config)
+        if decoded_config:
+            configs.append(decoded_config.rstrip("\n") + "\n")
 
     for url in external_subscriptions or []:
         decoded_config = fetch_and_decode(url, headers=external_headers)
-        if decoded_config is not None:
-            configs.append(decoded_config)
+        if decoded_config:
+            configs.append(decoded_config.rstrip("\n") + "\n")
 
     return configs
 
