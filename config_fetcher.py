@@ -2,6 +2,7 @@
 """Python equivalent of config_fetcher.lua - fetches and aggregates 3x-UI subscriptions."""
 
 import base64
+import json
 import os
 import re
 import sys
@@ -65,7 +66,56 @@ def fetch_and_decode(url, headers=None):
     return text
 
 
+def deep_merge(a, b):
+    if isinstance(a, list) and isinstance(b, list):
+        return a + b
+    if isinstance(a, dict) and isinstance(b, dict):
+        merged = dict(a)
+        for key, b_value in b.items():
+            merged[key] = deep_merge(merged[key], b_value) if key in merged else b_value
+        return merged
+    return b
+
+
+def dedupe_remarks(profiles):
+    seen = {}
+    for profile in profiles:
+        if not isinstance(profile, dict) or "remarks" not in profile:
+            continue
+        name = profile["remarks"]
+        seen[name] = seen.get(name, 0) + 1
+        if seen[name] > 1:
+            profile["remarks"] = f"{name} ({seen[name]})"
+
+
+def fetch_json_external_subscriptions(urls, headers=None):
+    parsed = []
+    for url in urls:
+        raw = fetch_and_decode(url, headers=headers)
+        if not raw:
+            continue
+        try:
+            parsed.append(json.loads(raw))
+        except ValueError as e:
+            print(f"Error: invalid JSON from {url}: {e}", file=sys.stderr)
+
+    if not parsed:
+        return []
+
+    merged = parsed[0]
+    for value in parsed[1:]:
+        merged = deep_merge(merged, value)
+
+    if isinstance(merged, list):
+        dedupe_remarks(merged)
+
+    return [json.dumps(merged, ensure_ascii=False)]
+
+
 def fetch_configs(servers, sub_id, external_subscriptions=None, external_headers=None):
+    if os.environ.get("EXTERNAL_SUBSCRIPTIONS_JSON") == "1":
+        return fetch_json_external_subscriptions(external_subscriptions or [], external_headers)
+
     configs = []
     if os.environ.get("ROUTING_ENABLED") == "1":
         site_host = os.environ.get("SITE_HOST")
