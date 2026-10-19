@@ -71,6 +71,17 @@ docker compose up -d
 
 Это создаст и запустит контейнеры Nginx и Python с нужной конфигурацией.
 
+### Запуск за общим reverse-proxy
+
+Если на сервере есть и другие сайты, порты 80/443 занимает общий nginx ([edge-proxy](../edge-proxy)): он держит сертификаты и проксирует домен `SITE_HOST` в этот проект через внешнюю Docker-сеть `proxy`. В этом режиме используется `docker-compose.edge.yml`. Там свой nginx (`nginx.edge.conf.template`) работает только по HTTP и без опубликованных портов, отдаёт `/routing/` и проксирует `/<SUB>/<id>` в Python. Certbot, cron и `EMAIL` не нужны.
+
+```bash
+docker network create proxy   # один раз, если сети ещё нет
+docker compose -f docker-compose.edge.yml up -d --build
+```
+
+Чтобы не писать `-f`, можно добавить `COMPOSE_FILE=docker-compose.edge.yml` в `.env`. Если раньше проект работал в обычном режиме, сначала нужно выполнить `docker compose down`, чтобы освободить 80/443.
+
 ## Как это работает
 
 - Nginx слушает порты 80 и 443 (SSL)

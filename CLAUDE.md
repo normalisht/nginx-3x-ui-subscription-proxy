@@ -20,6 +20,8 @@ SSL-сертификаты (Let's Encrypt) выпускаются/обновля
 - `update-certs.sh` — выпускает сертификат через `certbot certonly --webroot` (если сертификата ещё нет) либо продлевает через `certbot renew`; после успешной операции делает `nginx -s reload`.
 - `crontab.txt` — cron-задача, ежедневно в 12:00 запускающая `update-certs.sh`.
 
+Второй режим — за общим reverse-proxy сервера (`../edge-proxy`, домен `config.normanproject.ru`): `docker-compose.edge.yml`. В нём `subproxy-python` подключён только к внутренней сети. `subproxy-nginx` — стандартный `nginx:stable-alpine` с `nginx.edge.conf.template` (envsubst только `SUB` и `PORT`): работает по HTTP без опубликованных портов, отдаёт `routing.json` (смонтирован) и проксирует `/<SUB>/<id>`, адрес клиента берёт из `X-Real-IP` от edge. Он подключён и к внешней сети `proxy`, где edge находит его по имени. Имена сервисов уникальны, потому что в общей сети они служат DNS-именами. TLS, certbot и `EMAIL` в этом режиме не используются. Если меняешь маршруты в `nginx.conf.esh`, синхронизируй с `nginx.edge.conf.template`.
+
 ## Конфигурация окружения
 
 Переменные задаются через `.env` (см. `.env.example`) и пробрасываются в оба контейнера через `env_file` в `docker-compose.yml`:

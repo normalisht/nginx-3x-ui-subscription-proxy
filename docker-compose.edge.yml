@@ -1,0 +1,41 @@
+# Запуск за общим reverse-proxy сервера (edge-proxy): портов наружу нет, HTTPS и сертификаты — у edge.
+#   docker compose -f docker-compose.edge.yml up -d --build
+# или COMPOSE_FILE=docker-compose.edge.yml в .env — тогда без -f.
+# Edge проксирует весь домен на subproxy-nginx:80 через внешнюю сеть proxy (docker network create proxy).
+# Имена сервисов уникальны: в общей сети они — DNS-имена, рядом живут контейнеры других проектов.
+
+services:
+  subproxy-python:
+    build:
+      context: .
+      dockerfile: Dockerfile_python
+    env_file:
+      - .env
+    restart: always
+    # Только внутренняя сеть: снаружи бэкенд виден лишь через subproxy-nginx.
+    networks: [internal]
+
+  subproxy-nginx:
+    image: nginx:stable-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
+    restart: always
+    depends_on: [subproxy-python]
+    environment:
+      SUB: ${SUB:-sub}
+      PORT: ${PORT:-8080}
+      # Подставлять только свои переменные: остальные $… в шаблоне — переменные nginx.
+      NGINX_ENVSUBST_FILTER: ^(SUB|PORT)$$
+    volumes:
+      - ./nginx.edge.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./routing.json:/usr/share/nginx/html/routing/routing.json:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [internal, proxy]
+
+networks:
+  internal:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}
