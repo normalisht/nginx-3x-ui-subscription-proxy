@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -50,6 +51,11 @@ func (f *fetcher) get(ctx context.Context, rawURL string, headers http.Header) s
 	}
 	resp, err := f.client.Do(req)
 	if err != nil {
+		// url.Error повторяет в тексте полный адрес — оставляем только причину.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		f.log.Error("источник недоступен", "host", host, "err", err)
 		return ""
 	}

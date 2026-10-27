@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -118,11 +119,15 @@ func newHandler(c config, f *fetcher, log *slog.Logger) http.Handler {
 	return mux
 }
 
+// idRe — id подписки 3x-UI. Иное в адрес сервера не подставляем: «?», «#» или «..» в id
+// поменяли бы запрос к 3x-UI.
+var idRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
 // subscriptionID достаёт id из пути /<sub>/<id> (допустим «/» на конце).
 func subscriptionID(sub, path string) (string, bool) {
 	id, ok := strings.CutPrefix(path, "/"+sub+"/")
 	id = strings.TrimSuffix(id, "/")
-	if !ok || id == "" || strings.Contains(id, "/") {
+	if !ok || !idRe.MatchString(id) {
 		return "", false
 	}
 	return id, true

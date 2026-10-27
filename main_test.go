@@ -83,6 +83,11 @@ func TestSubscriptionID(t *testing.T) {
 		"/sub/abc/":    "abc",
 		"/sub/":        "",
 		"/sub/abc/def": "",
+		"/sub/a-b_C9":  "a-b_C9",
+		"/sub/abc?x=1": "",
+		"/sub/abc#x":   "",
+		"/sub/..":      "",
+		"/sub/a.b":     "",
 		"/other/abc":   "",
 		"/subabc":      "",
 	} {
@@ -167,6 +172,23 @@ func TestJSONSubscription(t *testing.T) {
 	// Большие числа и спецсимволы — как в источнике; 3x-UI и строки routing в JSON-режиме не участвуют.
 	if !strings.Contains(got, `12345678901234567890`) || !strings.Contains(got, `"<a&b>"`) || srv3x.path != "" {
 		t.Errorf("JSON: %s; запрос к 3x-UI: %q", got, srv3x.path)
+	}
+}
+
+// В лог попадает только хост источника: id подписки в пути — секрет.
+func TestLogWithoutSubscriptionID(t *testing.T) {
+	var buf strings.Builder
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	down := newSource(t, http.StatusOK, "")
+	down.Close() // соединение будет отклонено
+	notFound := newSource(t, http.StatusNotFound, "")
+	c := config{Sub: "sub", Servers: []string{down.URL + "/secret-path/", notFound.URL + "/secret-path/"}}
+	get(t, newHandler(c, newFetcher(log), log), "/sub/secretid")
+	if !strings.Contains(buf.String(), "источник недоступен") || !strings.Contains(buf.String(), "источник ответил ошибкой") {
+		t.Fatalf("нет записей об ошибках: %s", buf.String())
+	}
+	if strings.Contains(buf.String(), "secretid") || strings.Contains(buf.String(), "secret-path") {
+		t.Errorf("в логе адрес подписки: %s", buf.String())
 	}
 }
 
