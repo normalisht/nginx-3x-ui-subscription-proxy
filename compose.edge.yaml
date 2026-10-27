@@ -1,0 +1,35 @@
+# Режим за общим reverse-proxy (../edge-proxy): HTTP без TLS и без опубликованных портов. Edge проксирует
+# SITE_HOST на subproxy:8080 через внешнюю сеть proxy. Имя сервиса уникально: в общей сети оно — DNS-имя.
+
+services:
+  subproxy:
+    build: .
+    image: subproxy:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TLS: "0"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # Смонтирован, чтобы правка применялась без пересборки — make restart.
+      - ./routing.json:/srv/routing/routing.json:ro
+    healthcheck:
+      test: ["CMD", "/subproxy", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+      start_interval: 2s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [proxy]
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}

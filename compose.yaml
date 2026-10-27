@@ -1,0 +1,37 @@
+# Самостоятельный режим: сервис сам слушает 80/443 и выпускает сертификат Let's Encrypt для SITE_HOST.
+# За общим reverse-proxy (edge-proxy) — compose.edge.yaml: COMPOSE_FILE=compose.edge.yaml в .env.
+
+services:
+  subproxy:
+    build: .
+    image: subproxy:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TLS: "1"
+    ports:
+      - "80:8080"
+      - "443:8443"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # Смонтирован, чтобы правка применялась без пересборки — make restart.
+      - ./routing.json:/srv/routing/routing.json:ro
+      # Ключ аккаунта и сертификаты: без тома каждое пересоздание — новый выпуск и риск упереться в лимиты.
+      - certs:/data/certs
+    healthcheck:
+      test: ["CMD", "/subproxy", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+      start_interval: 2s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  certs:

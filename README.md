@@ -1,98 +1,61 @@
 # nginx-3x-ui-subscription-proxy
 
-.py
+[Русская версия](README_RU.md)
 
-## Overview
-This project allows you to set up an Nginx-based reverse proxy that fetches and aggregates subscription configurations from multiple 3x-UI servers. It simplifies subscription management by unifying configurations in a single endpoint.
+Merges subscriptions from several [3x-UI](https://github.com/MHSanaei/3x-ui) servers (and optionally third-party VPN services) into a single link. Useful when you run servers in different locations but want clients to add just one subscription.
 
-The proxy uses a multi-service architecture:
-- **Nginx**: Listens on ports 80/443, handles SSL termination, and proxies subscription requests to the Python backend
-- **Python**: Runs as a standalone HTTP server (port 8080) that fetches and aggregates subscription configurations from multiple 3x-UI servers
+It is a single Go service in a ~10 MB distroless image: it fetches all sources in parallel, serves `routing.json`, and in standalone mode obtains and renews its own Let's Encrypt certificate. No nginx, certbot or cron.
 
-## Important Notes
+## Important
 
-1. Each client must have the same **subscription ID** across all your servers.
+1. A client must have the same **subscription ID** on all your 3x-UI servers.
 2. Subscription encryption must be enabled on all 3x-UI servers.
 
+## Quick start
 
-## Setup Instructions
-
-### 1. Clone the Repository
 ```bash
-git clone https://github.com/apa4h/nginx-3x-ui-subscription-proxy.git
+git clone https://github.com/normalisht/nginx-3x-ui-subscription-proxy.git
 cd nginx-3x-ui-subscription-proxy
+make env    # creates .env from .env.example — fill it in
+make up     # build, start, wait for the healthcheck
 ```
 
-### 2. Copy the Environment File
-```bash
-cp .env.template .env
-```
+The subscription link is `https://<SITE_HOST>/<SUB>/<subscription_ID>`, e.g. `https://sub.example.com/sub/abc123`.
 
-### 3. Configure Environment Variables
-Edit the `.env` file and fill in the following variables with your own data:
+## Configuration (`.env`)
 
-| Variable        | Description                                                                                     |
-|-----------------|-------------------------------------------------------------------------------------------------|
-| `SITE_HOST`     | Domain name for your Nginx server (e.g., `subserver.example`).                                           |
-| `SERVERS`       | List of 3x-UI server URLs to aggregate subscriptions from (e.g., `https://server1.com/sub/ https://server2.com/sub/`). |
-| `SUB`           | Static part of the subscription path (e.g., `sub`).                                             |
-| `PORT`          | Port for the Python server to listen on (default: 8080).                                             |
-| `EXTERNAL_SUBSCRIPTIONS` | Optional. List of full third-party subscription URLs (e.g., other VPN services) that already include the ID and return base64 directly — unlike `SERVERS`, nothing is appended to these (e.g., `https://vpn-service.com/sub/abc123 https://another.com/sub/xyz789`). |
-| `EXTERNAL_SUBSCRIPTION_HEADERS` | Optional. Custom HTTP headers sent by the backend itself (not forwarded from the real client) when requesting `EXTERNAL_SUBSCRIPTIONS` — e.g. to mimic a real VPN client's `User-Agent`/`Hwid`. Format: `Key: Value`, multiple headers separated by `;;` or newline, e.g. `User-Agent: Happ/2.4.1 (Android 13; SDK 33);;Hwid: 1234567890abcdef`. |
+| Variable | Description |
+|---|---|
+| `SERVERS` | 3x-UI subscription URLs, space-separated. The client's ID is appended to each: `https://s1.com/sub/` → `https://s1.com/sub/<id>` |
+| `EXTERNAL_SUBSCRIPTIONS` | Optional. Full third-party subscription URLs, space-separated, fetched as-is |
+| `EXTERNAL_SUBSCRIPTION_HEADERS` | Optional. Headers sent to `EXTERNAL_SUBSCRIPTIONS` to mimic a regular VPN client: `Key: Value`, separated by `;;` or newlines, e.g. `User-Agent: Happ/2.4.1 (Android 13; SDK 33);;Hwid: 1234567890abcdef` |
+| `EXTERNAL_SUBSCRIPTIONS_JSON` | `1` — third-party subscriptions return JSON configs; they are merged into one (arrays concatenated, objects merged, duplicate `remarks` numbered). `SERVERS` are not used in this mode |
+| `SUB` | Static part of the subscription path, default `sub` |
+| `SITE_HOST` | Service domain: the certificate is issued for it, and the `routing.json` link points to it |
+| `ROUTING_ENABLED` | `1` — prepend links to `https://<SITE_HOST>/routing/routing.json` (routing rules for Happ and similar clients) |
+| `EMAIL` | Optional. Let's Encrypt account email (standalone mode) |
+| `COMPOSE_FILE` | `compose.edge.yaml` — run behind a shared reverse proxy (see below) |
 
-#### Subscription URL Format
+## Modes
 
-Once you've configured the environment variables, your subscription URL will look like this:
-`https://subserver.example/sub/subscription_ID`
+**Standalone** (`compose.yaml`, default): the service listens on ports 80 and 443 and gets a Let's Encrypt certificate for `SITE_HOST` on the first HTTPS request (TLS-ALPN-01 or HTTP-01). Certificates are kept in the `certs` volume. Port 80 redirects to HTTPS.
 
-Where:
-- `subserver.example` is the domain you set in the `SITE_HOST` variable.
-- `sub` is the static part of the subscription path, set in the `SUB` variable.
-- `subscription_ID` is the unique ID for each client from 3x-ui.
+**Behind a shared reverse proxy** (`compose.edge.yaml`): plain HTTP on `subproxy:8080` in the external Docker network `proxy`, no published ports. TLS is the proxy's job — see [edge-proxy](https://github.com/normalisht/edge-proxy). Set `COMPOSE_FILE=compose.edge.yaml` in `.env`.
 
-### 4. Start the Application
-Run the following command to start the application:
-```bash
-docker compose up -d
-```
+## Endpoints
 
-This will build and start both the Nginx and Python containers with the provided configuration.
+| Path | Response |
+|---|---|
+| `/<SUB>/<id>` | merged subscription in base64; `502` if no source returned anything |
+| `/routing/routing.json` | routing rules from `routing.json` (mounted — edit and `make restart`) |
+| `/healthz` | `ok` |
 
-## How It Works
-- Nginx listens on ports 80 and 443 (SSL)
-- Subscription requests to `/sub/<subscription_ID>` are proxied to the Python service on port 8080
-- The Python service fetches configurations from all servers listed in `SERVERS` (appending `subscription_ID` to each URL) and from third-party links listed in `EXTERNAL_SUBSCRIPTIONS` (fetched as-is)
-- Configurations are decoded (base64), combined, re-encoded, and returned to the client
-- SSL certificates are managed automatically by Certbot
+Sources are fetched in parallel with a 10-second timeout each; an unavailable source is skipped and logged (host only — subscription IDs are not logged). TLS verification of sources is disabled on purpose: 3x-UI panels often use self-signed certificates.
 
-## Architecture
-```
-┌─────────────────┐     HTTPS /sub/*     ┌──────────────────┐
-│                 │ ──────────────────────▶ │                  │
-│     Nginx       │   HTTP proxy_pass      │     Python       │
-│  (ports 80/443) │ ◀───────────────────── │  (port 8080)     │
-│                 │  HTTP to backend       │                  │
-└─────────────────┘                         └──────────────────┘
-      │                                                            │
-      │ SSL termination                                            │
-      │ Certbot integration                                        │
-      │                                                            │
-      └────────────────────────────────────────────────────────────┘
-                              DNS: python
-```
+## Commands
 
-## Example Configuration
-Here is an example `.env` file:
-```dotenv
-SITE_HOST=example.com
-SERVERS="https://server1.com/sub/ https://server2.com/sub/"
-SUB=sub
-PORT=8080
-EXTERNAL_SUBSCRIPTIONS="https://vpn-service.com/sub/abc123"
-```
+`make help` lists everything: `up`, `down`, `restart` (apply `.env`/`routing.json` changes), `update` (`git pull` + restart), `status`, `logs`, `check` (gofmt, vet, tests).
 
 ## License
-This project is licensed under the MIT License. See the `LICENSE` file for details.
 
-## Contributing
-Contributions are welcome! Feel free to open an issue or submit a pull request.
+MIT, see `LICENSE`.

@@ -1,3 +1,6 @@
-venv
-.gitignore
-.env.example
+# В образ попадают только исходники и routing.json.
+*
+!go.mod
+!go.sum
+!*.go
+!routing.json
