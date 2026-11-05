@@ -21,30 +21,85 @@ import (
 // maxBody — предел ответа одного источника: подписка — килобайты, JSON-конфиги — сотни килобайт.
 const maxBody = 10 << 20
 
+// freshFor — сколько ответ источника считается свежим: всё это время источник не опрашивается.
+const freshFor = 5 * time.Minute
+
+// sourceResponse — последний успешный ответ источника и когда он получен.
+type sourceResponse struct {
+	text string
+	at   time.Time
+}
+
 type fetcher struct {
 	client *http.Client
 	log    *slog.Logger
+	now    func() time.Time
+
+	mu sync.Mutex
+	// last — по полному адресу источника: у серверов 3x-UI в нём id клиента, ответы разных клиентов не смешиваются.
+	last map[string]sourceResponse
 }
 
 func newFetcher(log *slog.Logger) *fetcher {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	// Проверка сертификата выключена намеренно: у серверов 3x-UI бывают самоподписанные.
 	tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	return &fetcher{client: &http.Client{Timeout: 10 * time.Second, Transport: tr}, log: log}
+	return &fetcher{
+		client: &http.Client{Timeout: 10 * time.Second, Transport: tr},
+		log:    log,
+		now:    time.Now,
+		last:   map[string]sourceResponse{},
+	}
 }
 
-// get скачивает источник и декодирует base64, если ответ на него похож. Пустая строка — источник
-// недоступен или пуст: его просто пропускают.
-func (f *fetcher) get(ctx context.Context, rawURL string, headers http.Header) string {
-	// В логе — только хост: в пути и параметрах ссылки — id подписки.
-	host := rawURL
-	if u, err := url.Parse(rawURL); err == nil {
-		host = u.Host
+// fetch отдаёт ответ источника: свежий — из памяти, без запроса. Если источник временно не отвечает,
+// отдаётся его последний успешный ответ: иначе подписка клиента сократится до остальных источников.
+func (f *fetcher) fetch(ctx context.Context, rawURL string, headers http.Header, wantJSON bool) string {
+	f.mu.Lock()
+	last, ok := f.last[rawURL]
+	f.mu.Unlock()
+	if ok && f.now().Sub(last.at) < freshFor {
+		return last.text
 	}
+
+	text, answered := f.get(ctx, rawURL, headers)
+	if answered && wantJSON && text != "" && !json.Valid([]byte(text)) {
+		f.log.Error("источник отдал не JSON", "host", hostOf(rawURL))
+		answered = false
+	}
+	if !answered {
+		if ok {
+			f.log.Warn("источник не ответил: отдан его последний успешный ответ", "host", hostOf(rawURL), "age", f.now().Sub(last.at).String())
+		}
+		return last.text
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if text == "" {
+		delete(f.last, rawURL)
+	} else {
+		f.last[rawURL] = sourceResponse{text: text, at: f.now()}
+	}
+	return text
+}
+
+// hostOf — хост для лога: в пути и параметрах ссылки — id подписки.
+func hostOf(rawURL string) string {
+	if u, err := url.Parse(rawURL); err == nil {
+		return u.Host
+	}
+	return rawURL
+}
+
+// get скачивает источник и декодирует base64, если ответ на него похож. answered=false — источник
+// временно не отвечает; answered=true и пустая строка — отказал этой подписке или она пуста.
+func (f *fetcher) get(ctx context.Context, rawURL string, headers http.Header) (text string, answered bool) {
+	host := hostOf(rawURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		f.log.Error("неверный адрес источника", "host", host, "err", err)
-		return ""
+		return "", false
 	}
 	for k, v := range headers {
 		req.Header[k] = v
@@ -57,19 +112,21 @@ func (f *fetcher) get(ctx context.Context, rawURL string, headers http.Header) s
 			err = ue.Err
 		}
 		f.log.Error("источник недоступен", "host", host, "err", err)
-		return ""
+		return "", false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		f.log.Error("источник ответил ошибкой", "host", host, "status", resp.StatusCode)
-		return ""
+		// 4xx — отказ именно этой подписке (клиент удалён или отозван); 408 и 429 — временная перегрузка.
+		refused := resp.StatusCode/100 == 4 && resp.StatusCode != http.StatusRequestTimeout && resp.StatusCode != http.StatusTooManyRequests
+		return "", refused
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
 		f.log.Error("ответ источника не прочитался", "host", host, "err", err)
-		return ""
+		return "", false
 	}
-	return decode(string(body))
+	return decode(string(body)), true
 }
 
 var base64Re = regexp.MustCompile(`^[A-Za-z0-9+/_=-]+$`)
@@ -92,11 +149,11 @@ func decode(text string) string {
 }
 
 // fetchAll скачивает источники параллельно; результаты — в порядке urls.
-func (f *fetcher) fetchAll(ctx context.Context, urls []string, headers http.Header) []string {
+func (f *fetcher) fetchAll(ctx context.Context, urls []string, headers http.Header, wantJSON bool) []string {
 	out := make([]string, len(urls))
 	var wg sync.WaitGroup
 	for i, u := range urls {
-		wg.Go(func() { out[i] = f.get(ctx, u, headers) })
+		wg.Go(func() { out[i] = f.fetch(ctx, u, headers, wantJSON) })
 	}
 	wg.Wait()
 	return out
@@ -118,8 +175,8 @@ func (f *fetcher) subscription(ctx context.Context, c config, id string) (body s
 	for _, s := range c.Servers {
 		urls = append(urls, strings.TrimRight(s, "/")+"/"+id)
 	}
-	results := f.fetchAll(ctx, urls, nil)
-	results = append(results, f.fetchAll(ctx, c.External, c.ExternalHeaders)...)
+	results := f.fetchAll(ctx, urls, nil, false)
+	results = append(results, f.fetchAll(ctx, c.External, c.ExternalHeaders, false)...)
 	for _, r := range results {
 		if r != "" {
 			b.WriteString(strings.TrimRight(r, "\n") + "\n")
@@ -135,7 +192,7 @@ func (f *fetcher) subscription(ctx context.Context, c config, id string) (body s
 func (f *fetcher) jsonSubscription(ctx context.Context, c config) (string, bool) {
 	var merged any
 	n := 0
-	for i, raw := range f.fetchAll(ctx, c.External, c.ExternalHeaders) {
+	for i, raw := range f.fetchAll(ctx, c.External, c.ExternalHeaders, true) {
 		if raw == "" {
 			continue
 		}

@@ -12,27 +12,46 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 var testLog = slog.New(slog.NewTextHandler(io.Discard, nil))
 
-// source — фейковый источник подписки: отдаёт body, запоминает путь и заголовки запроса.
+// source — фейковый источник подписки: отдаёт body, запоминает путь и заголовки запроса, считает запросы.
+// Ответ можно поменять между запросами; abort обрывает соединение посреди тела.
 type source struct {
 	*httptest.Server
 	path   string
 	header http.Header
+	hits   int
+	status int
+	body   string
+	abort  bool
 }
 
 func newSource(t *testing.T, status int, body string) *source {
 	t.Helper()
-	s := &source{}
+	s := &source{status: status, body: body}
 	s.Server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.path, s.header = r.URL.Path, r.Header.Clone()
-		w.WriteHeader(status)
-		io.WriteString(w, body)
+		s.hits++
+		w.WriteHeader(s.status)
+		io.WriteString(w, s.body)
+		if s.abort {
+			w.(http.Flusher).Flush()
+			panic(http.ErrAbortHandler)
+		}
 	}))
 	t.Cleanup(s.Close)
 	return s
+}
+
+// clockedFetcher — fetcher с управляемыми часами: advance переводит их вперёд.
+func clockedFetcher(log *slog.Logger) (f *fetcher, advance func(time.Duration)) {
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	f = newFetcher(log)
+	f.now = func() time.Time { return now }
+	return f, func(d time.Duration) { now = now.Add(d) }
 }
 
 func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
@@ -203,6 +222,174 @@ func TestNoConfigs(t *testing.T) {
 		if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "No configs available") {
 			t.Errorf("%s: %d %q", name, rec.Code, rec.Body)
 		}
+	}
+}
+
+func TestFreshResponseSkipsSource(t *testing.T) {
+	s := newSource(t, http.StatusOK, "vless://old")
+	f, advance := clockedFetcher(testLog)
+	h := newHandler(config{Sub: "sub", External: []string{s.URL}}, f, testLog)
+
+	if got := decodeBody(t, get(t, h, "/sub/id")); got != "vless://old\n" {
+		t.Fatalf("первый ответ: %q", got)
+	}
+	s.body = "vless://new"
+	advance(5*time.Minute - time.Second)
+	if got := decodeBody(t, get(t, h, "/sub/id")); got != "vless://old\n" || s.hits != 1 {
+		t.Errorf("пока ответ свежий: %q, запросов к источнику %d", got, s.hits)
+	}
+	advance(time.Second)
+	if got := decodeBody(t, get(t, h, "/sub/id")); got != "vless://new\n" || s.hits != 2 {
+		t.Errorf("через 5 минут: %q, запросов к источнику %d", got, s.hits)
+	}
+}
+
+// Адреса серверов 3x-UI содержат id: ответ одного клиента нельзя отдать другому.
+func TestResponseNotSharedBetweenClients(t *testing.T) {
+	s := newSource(t, http.StatusOK, "vless://a")
+	h := newHandler(config{Sub: "sub", Servers: []string{s.URL + "/sub"}}, newFetcher(testLog), testLog)
+	if rec := get(t, h, "/sub/client-a"); rec.Code != http.StatusOK {
+		t.Fatalf("client-a: %d", rec.Code)
+	}
+	s.status = http.StatusInternalServerError
+	if rec := get(t, h, "/sub/client-b"); rec.Code != http.StatusBadGateway || s.path != "/sub/client-b" {
+		t.Errorf("client-b: %d, путь у источника %q", rec.Code, s.path)
+	}
+}
+
+func TestSourceAnswerAfterFreshPeriod(t *testing.T) {
+	const plain, profiles = "vless://a", `[{"remarks":"A"}]`
+	for name, c := range map[string]struct {
+		json     bool
+		status   int
+		body     string
+		abort    bool
+		closed   bool
+		wantCode int
+		want     string
+	}{
+		"соединение отклонено → прошлый ответ": {closed: true, wantCode: 200, want: "vless://a\n"},
+		"обрыв тела → прошлый ответ":           {status: 200, body: "vless", abort: true, wantCode: 200, want: "vless://a\n"},
+		"500 → прошлый ответ":                  {status: 500, wantCode: 200, want: "vless://a\n"},
+		"408 → прошлый ответ":                  {status: 408, wantCode: 200, want: "vless://a\n"},
+		"429 → прошлый ответ":                  {status: 429, wantCode: 200, want: "vless://a\n"},
+		"404: подписки больше нет":             {status: 404, wantCode: 502},
+		"403: подписка отозвана":               {status: 403, wantCode: 502},
+		"200 и пусто: подписка без серверов":   {status: 200, body: "\n", wantCode: 502},
+		"200 и новый текст":                    {status: 200, body: "vless://b", wantCode: 200, want: "vless://b\n"},
+		"JSON: 200 и не JSON → прошлый ответ":  {json: true, status: 200, body: "vless://stub", wantCode: 200, want: profiles},
+		"JSON: 500 → прошлый ответ":            {json: true, status: 500, wantCode: 200, want: profiles},
+		"JSON: 200 и новый JSON":               {json: true, status: 200, body: `[{"remarks":"B"}]`, wantCode: 200, want: `[{"remarks":"B"}]`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			first := plain
+			if c.json {
+				first = profiles
+			}
+			s := newSource(t, http.StatusOK, first)
+			f, advance := clockedFetcher(testLog)
+			h := newHandler(config{Sub: "sub", JSON: c.json, External: []string{s.URL}}, f, testLog)
+			if rec := get(t, h, "/sub/id"); rec.Code != http.StatusOK {
+				t.Fatalf("первый запрос: %d", rec.Code)
+			}
+
+			advance(5 * time.Minute)
+			s.status, s.body, s.abort = c.status, c.body, c.abort
+			if c.closed {
+				s.Close()
+			}
+			rec := get(t, h, "/sub/id")
+			if rec.Code != c.wantCode {
+				t.Fatalf("код %d, want %d", rec.Code, c.wantCode)
+			}
+			if c.wantCode == http.StatusOK {
+				if got := decodeBody(t, rec); got != c.want {
+					t.Errorf("подписка %q, want %q", got, c.want)
+				}
+			}
+		})
+	}
+}
+
+// Ответ, отданный из-за сбоя, не становится свежим: источник опрашивается на следующем же запросе.
+func TestFallbackKeepsPolling(t *testing.T) {
+	s := newSource(t, http.StatusOK, "vless://old")
+	f, advance := clockedFetcher(testLog)
+	h := newHandler(config{Sub: "sub", External: []string{s.URL}}, f, testLog)
+	get(t, h, "/sub/id")
+
+	advance(5 * time.Minute)
+	s.status = http.StatusInternalServerError
+	if got := decodeBody(t, get(t, h, "/sub/id")); got != "vless://old\n" || s.hits != 2 {
+		t.Fatalf("при сбое: %q, запросов %d", got, s.hits)
+	}
+	s.status, s.body = http.StatusOK, "vless://new"
+	if got := decodeBody(t, get(t, h, "/sub/id")); got != "vless://new\n" || s.hits != 3 {
+		t.Errorf("после восстановления: %q, запросов %d", got, s.hits)
+	}
+}
+
+// Отказ источника отменяет прошлый ответ: при последующем сбое он уже не вернётся клиенту.
+func TestRefusalForgetsResponse(t *testing.T) {
+	for name, refusal := range map[string]struct {
+		status int
+		body   string
+	}{
+		"404":         {status: http.StatusNotFound},
+		"200 и пусто": {status: http.StatusOK, body: "\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newSource(t, http.StatusOK, "vless://a")
+			f, advance := clockedFetcher(testLog)
+			h := newHandler(config{Sub: "sub", External: []string{s.URL}}, f, testLog)
+			get(t, h, "/sub/id")
+
+			advance(5 * time.Minute)
+			s.status, s.body = refusal.status, refusal.body
+			get(t, h, "/sub/id")
+			s.status, s.body = http.StatusInternalServerError, ""
+			if rec := get(t, h, "/sub/id"); rec.Code != http.StatusBadGateway {
+				t.Errorf("после отказа и сбоя: %d %q", rec.Code, rec.Body)
+			}
+		})
+	}
+}
+
+// Сбой одного источника не урезает подписку до профилей остальных, а номера в remarks не накапливаются.
+func TestJSONKeepsProfilesOfFailedSource(t *testing.T) {
+	const want = `[{"remarks":"A"},{"remarks":"A (2)"}]`
+	a := newSource(t, http.StatusOK, `[{"remarks":"A"}]`)
+	b := newSource(t, http.StatusOK, `[{"remarks":"A"}]`)
+	f, advance := clockedFetcher(testLog)
+	h := newHandler(config{Sub: "sub", JSON: true, External: []string{a.URL, b.URL}}, f, testLog)
+	if got := decodeBody(t, get(t, h, "/sub/id")); got != want {
+		t.Fatalf("оба источника: %s", got)
+	}
+	advance(5 * time.Minute)
+	b.status = http.StatusBadGateway
+	if got := decodeBody(t, get(t, h, "/sub/id")); got != want {
+		t.Errorf("сбой второго источника: %s, want %s", got, want)
+	}
+}
+
+func TestFallbackLogHasHostOnly(t *testing.T) {
+	var buf strings.Builder
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	s := newSource(t, http.StatusOK, "vless://a")
+	f, advance := clockedFetcher(log)
+	h := newHandler(config{Sub: "sub", Servers: []string{s.URL + "/secret-path/"}}, f, log)
+	get(t, h, "/sub/secretid")
+
+	advance(5 * time.Minute)
+	s.status = http.StatusInternalServerError
+	if rec := get(t, h, "/sub/secretid"); rec.Code != http.StatusOK {
+		t.Fatalf("код %d, want прошлый ответ", rec.Code)
+	}
+	if !strings.Contains(buf.String(), "level=WARN") {
+		t.Fatalf("нет предупреждения о прошлом ответе: %s", buf.String())
+	}
+	if strings.Contains(buf.String(), "secretid") || strings.Contains(buf.String(), "secret-path") {
+		t.Errorf("в логе адрес подписки: %s", buf.String())
 	}
 }
 

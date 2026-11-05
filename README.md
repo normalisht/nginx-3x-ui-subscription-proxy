@@ -6,6 +6,8 @@ Merges subscriptions from several [3x-UI](https://github.com/MHSanaei/3x-ui) ser
 
 It is a single Go service in a ~10 MB distroless image: it fetches all sources in parallel, serves `routing.json`, and in standalone mode obtains and renews its own Let's Encrypt certificate. No nginx, certbot or cron.
 
+Each source's response is served from memory for 5 minutes, without a request to the source. If the source is then temporarily unavailable (network, timeout, 5xx, 408, 429, or non-JSON in JSON mode), its last successful response is served, however old it is. A refusal from the source (other 4xx or an empty response) discards the saved response. The memory is cleared when the container restarts.
+
 ## Important
 
 1. A client must have the same **subscription ID** on all your 3x-UI servers.
