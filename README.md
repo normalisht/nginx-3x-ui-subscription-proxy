@@ -31,8 +31,9 @@ The subscription link is `https://<SITE_HOST>/<SUB>/<subscription_ID>`, e.g. `ht
 | `SERVERS` | 3x-UI subscription URLs, space-separated. The client's ID is appended to each: `https://s1.com/sub/` → `https://s1.com/sub/<id>` |
 | `EXTERNAL_SUBSCRIPTIONS` | Optional. Full third-party subscription URLs, space-separated, fetched as-is |
 | `EXTERNAL_SUBSCRIPTION_HEADERS` | Optional. Headers sent to `EXTERNAL_SUBSCRIPTIONS` to mimic a regular VPN client: `Key: Value`, separated by `;;` or newlines, e.g. `User-Agent: Happ/2.4.1 (Android 13; SDK 33);;Hwid: 1234567890abcdef` |
-| `EXTERNAL_SUBSCRIPTIONS_JSON` | `1` — third-party subscriptions return JSON configs; they are merged into one (arrays concatenated, objects merged, duplicate `remarks` numbered). `SERVERS` are not used in this mode |
+| `EXTERNAL_SUBSCRIPTIONS_JSON` | `1` — third-party subscriptions return JSON configs; they are merged into one (arrays concatenated, objects merged, duplicate `remarks` numbered) and served as plain JSON, without base64. `SERVERS` are not used in this mode |
 | `SUB` | Static part of the subscription path, default `sub` |
+| `ALLOWED_IDS` | Allowed subscription IDs, space-separated; others get 404. Empty — any ID. **Always set it with `EXTERNAL_SUBSCRIPTIONS_JSON=1`:** the ID is not sent to the sources, so without the list any `/<SUB>/<anything>` path returns the subscription |
 | `SITE_HOST` | Service domain: the certificate is issued for it, and the `routing.json` link points to it |
 | `ROUTING_ENABLED` | `1` — prepend links to `https://<SITE_HOST>/routing/routing.json` (routing rules for Happ and similar clients) |
 | `EMAIL` | Optional. Let's Encrypt account email (standalone mode) |

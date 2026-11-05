@@ -176,7 +176,11 @@ func TestJSONSubscription(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("ответ: %d %s", rec.Code, rec.Body)
 	}
-	got := decodeBody(t, rec)
+	// Happ не разбирает JSON в base64: ответ — чистый JSON, как у самого источника.
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json; charset=utf-8" {
+		t.Errorf("Content-Type: %q", ct)
+	}
+	got := rec.Body.String()
 	var profiles []map[string]any
 	if err := json.Unmarshal([]byte(got), &profiles); err != nil {
 		t.Fatalf("не JSON: %s", got)
@@ -303,7 +307,11 @@ func TestSourceAnswerAfterFreshPeriod(t *testing.T) {
 				t.Fatalf("код %d, want %d", rec.Code, c.wantCode)
 			}
 			if c.wantCode == http.StatusOK {
-				if got := decodeBody(t, rec); got != c.want {
+				got := rec.Body.String()
+				if !c.json {
+					got = decodeBody(t, rec)
+				}
+				if got != c.want {
 					t.Errorf("подписка %q, want %q", got, c.want)
 				}
 			}
@@ -362,12 +370,12 @@ func TestJSONKeepsProfilesOfFailedSource(t *testing.T) {
 	b := newSource(t, http.StatusOK, `[{"remarks":"A"}]`)
 	f, advance := clockedFetcher(testLog)
 	h := newHandler(config{Sub: "sub", JSON: true, External: []string{a.URL, b.URL}}, f, testLog)
-	if got := decodeBody(t, get(t, h, "/sub/id")); got != want {
+	if got := get(t, h, "/sub/id").Body.String(); got != want {
 		t.Fatalf("оба источника: %s", got)
 	}
 	advance(5 * time.Minute)
 	b.status = http.StatusBadGateway
-	if got := decodeBody(t, get(t, h, "/sub/id")); got != want {
+	if got := get(t, h, "/sub/id").Body.String(); got != want {
 		t.Errorf("сбой второго источника: %s, want %s", got, want)
 	}
 }
@@ -424,6 +432,39 @@ func TestRoutes(t *testing.T) {
 	}
 }
 
+func TestAllowedIDs(t *testing.T) {
+	for name, c := range map[string]struct {
+		json    bool
+		allowed []string
+		path    string
+		want    int
+		wantHit int
+	}{
+		"в списке":                     {allowed: []string{"good", "other"}, path: "/sub/good", want: 200, wantHit: 1},
+		"второй в списке":              {allowed: []string{"good", "other"}, path: "/sub/other", want: 200, wantHit: 1},
+		"в списке, «/» на конце":       {allowed: []string{"good"}, path: "/sub/good/", want: 200, wantHit: 1},
+		"не в списке":                  {allowed: []string{"good"}, path: "/sub/testid", want: 404},
+		"начало разрешённого id":       {allowed: []string{"good"}, path: "/sub/goo", want: 404},
+		"другой регистр":               {allowed: []string{"good"}, path: "/sub/GOOD", want: 404},
+		"список пуст — любой id":       {path: "/sub/testid", want: 200, wantHit: 1},
+		"JSON: id не в списке":         {json: true, allowed: []string{"good"}, path: "/sub/testid", want: 404},
+		"JSON: id в списке":            {json: true, allowed: []string{"good"}, path: "/sub/good", want: 200, wantHit: 1},
+		"JSON: список пуст — любой id": {json: true, path: "/sub/testid", want: 200, wantHit: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newSource(t, http.StatusOK, `[{"remarks":"A"}]`)
+			cfg := config{Sub: "sub", JSON: c.json, AllowedIDs: c.allowed, External: []string{s.URL}}
+			h := newHandler(cfg, newFetcher(testLog), testLog)
+			if rec := get(t, h, c.path); rec.Code != c.want {
+				t.Errorf("код %d, want %d", rec.Code, c.want)
+			}
+			if s.hits != c.wantHit {
+				t.Errorf("запросов к источнику %d, want %d", s.hits, c.wantHit)
+			}
+		})
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	env := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 	c, err := loadConfig(env(map[string]string{"SERVERS": " https://a/sub/  https://b/sub/ ", "SUB": "/sub/"}))
@@ -436,6 +477,10 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if c, _ := loadConfig(env(map[string]string{"EXTERNAL_SUBSCRIPTIONS": "https://x"})); c.Sub != "sub" {
 		t.Errorf("SUB по умолчанию: %q", c.Sub)
+	}
+	c, _ = loadConfig(env(map[string]string{"SERVERS": "https://a", "ALLOWED_IDS": " one  two\n"}))
+	if !reflect.DeepEqual(c.AllowedIDs, []string{"one", "two"}) {
+		t.Errorf("ALLOWED_IDS: %q", c.AllowedIDs)
 	}
 
 	for name, m := range map[string]map[string]string{

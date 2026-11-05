@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -103,7 +104,8 @@ func newHandler(c config, f *fetcher, log *slog.Logger) http.Handler {
 	})
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		id, ok := subscriptionID(c.Sub, r.URL.Path)
-		if !ok {
+		// В JSON-режиме id не уходит к источникам: без этой проверки подписку отдал бы любой адрес.
+		if !ok || (len(c.AllowedIDs) > 0 && !slices.Contains(c.AllowedIDs, id)) {
 			http.NotFound(w, r)
 			return
 		}
@@ -113,7 +115,11 @@ func newHandler(c config, f *fetcher, log *slog.Logger) http.Handler {
 			http.Error(w, "No configs available", http.StatusBadGateway)
 			return
 		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		contentType := "text/plain; charset=utf-8"
+		if c.JSON {
+			contentType = "application/json; charset=utf-8"
+		}
+		w.Header().Set("Content-Type", contentType)
 		w.Write([]byte(body))
 	})
 	return mux

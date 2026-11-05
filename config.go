@@ -12,6 +12,8 @@ type config struct {
 	SiteHost string
 	// Sub — статическая часть пути подписки: /<Sub>/<id>.
 	Sub string
+	// AllowedIDs — какие id подписок обслуживать; пусто — любые.
+	AllowedIDs []string
 	// Servers — адреса подписок 3x-UI, к ним дописывается id клиента.
 	Servers []string
 	// External — готовые ссылки сторонних подписок, запрашиваются как есть.
@@ -38,6 +40,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	c := config{
 		SiteHost:        strings.TrimSpace(getenv("SITE_HOST")),
 		Sub:             strings.Trim(strings.TrimSpace(getenv("SUB")), "/"),
+		AllowedIDs:      strings.Fields(getenv("ALLOWED_IDS")),
 		Servers:         strings.Fields(getenv("SERVERS")),
 		External:        strings.Fields(getenv("EXTERNAL_SUBSCRIPTIONS")),
 		ExternalHeaders: parseHeaders(getenv("EXTERNAL_SUBSCRIPTION_HEADERS")),

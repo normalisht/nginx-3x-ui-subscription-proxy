@@ -159,7 +159,8 @@ func (f *fetcher) fetchAll(ctx context.Context, urls []string, headers http.Head
 	return out
 }
 
-// subscription собирает подписку клиента id в base64. ok=false — ни один источник ничего не дал.
+// subscription собирает подписку клиента id: список ссылок в base64, в JSON-режиме — чистый JSON.
+// ok=false — ни один источник ничего не дал.
 func (f *fetcher) subscription(ctx context.Context, c config, id string) (body string, ok bool) {
 	if c.JSON {
 		return f.jsonSubscription(ctx, c)
@@ -188,7 +189,8 @@ func (f *fetcher) subscription(ctx context.Context, c config, id string) (body s
 	return base64.StdEncoding.EncodeToString([]byte(b.String())), true
 }
 
-// jsonSubscription сливает JSON-конфиги сторонних подписок в один (см. deepMerge).
+// jsonSubscription сливает JSON-конфиги сторонних подписок в один (см. deepMerge). Без base64, как у
+// самих источников: JSON в base64 Happ отвергает с ошибкой об отсутствии ссылок на серверы.
 func (f *fetcher) jsonSubscription(ctx context.Context, c config) (string, bool) {
 	var merged any
 	n := 0
@@ -223,7 +225,7 @@ func (f *fetcher) jsonSubscription(ctx context.Context, c config) (string, bool)
 		f.log.Error("сборка JSON", "err", err)
 		return "", false
 	}
-	return base64.StdEncoding.EncodeToString([]byte(strings.TrimRight(b.String(), "\n"))), true
+	return strings.TrimRight(b.String(), "\n"), true
 }
 
 // deepMerge: списки склеиваются, объекты сливаются рекурсивно, в остальных случаях побеждает b.
