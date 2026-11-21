@@ -3,8 +3,7 @@
 
 services:
   subproxy:
-    build: .
-    image: subproxy:latest
+    image: ghcr.io/normalisht/nginx-3x-ui-subscription-proxy:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env
     environment:
