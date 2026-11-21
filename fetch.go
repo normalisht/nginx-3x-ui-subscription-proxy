@@ -114,7 +114,7 @@ func (f *fetcher) get(ctx context.Context, rawURL string, headers http.Header) (
 		f.log.Error("источник недоступен", "host", host, "err", err)
 		return "", false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		f.log.Error("источник ответил ошибкой", "host", host, "status", resp.StatusCode)
 		// 4xx — отказ именно этой подписке (клиент удалён или отозван); 408 и 429 — временная перегрузка.
