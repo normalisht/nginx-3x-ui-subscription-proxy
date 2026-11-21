@@ -59,6 +59,10 @@ make up     # сборка, запуск, ожидание healthcheck
 
 `make help` — список: `up`, `down`, `restart` (применить правки `.env` и `routing.json`), `update` (`git pull` и перезапуск), `status`, `logs`, `check` (gofmt, vet, тесты).
 
+## Деплой
+
+CI/CD — GitHub Actions: PR проверяет `ci.yml` (golangci-lint + `make check`); после вмержа в main `release.yml` собирает образ в GHCR (теги `latest` + sha) и автоматически выкатывает его на VPS по SSH. Откат/перевыкат — ручной запуск «Релиз» с указанием тега. Подробности — `docs/DEPLOY.md`.
+
 ## Лицензия
 
 MIT, см. `LICENSE`.

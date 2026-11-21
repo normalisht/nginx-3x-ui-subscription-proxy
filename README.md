@@ -59,6 +59,10 @@ Sources are fetched in parallel with a 10-second timeout each; an unavailable so
 
 `make help` lists everything: `up`, `down`, `restart` (apply `.env`/`routing.json` changes), `update` (`git pull` + restart), `status`, `logs`, `check` (gofmt, vet, tests).
 
+## Deploy
+
+CI/CD is GitHub Actions: PRs run `ci.yml` (golangci-lint + `make check`); after merging to main, `release.yml` builds the image in GHCR (`latest` + sha tags) and automatically deploys it to the VPS over SSH. Rollback/redeploy — run the «Релиз» workflow manually with a tag. See `docs/DEPLOY.md` for details (in Russian).
+
 ## License
 
 MIT, see `LICENSE`.
