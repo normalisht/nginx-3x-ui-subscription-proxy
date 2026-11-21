@@ -36,7 +36,8 @@ func newSource(t *testing.T, status int, body string) *source {
 		s.path, s.header = r.URL.Path, r.Header.Clone()
 		s.hits++
 		w.WriteHeader(s.status)
-		io.WriteString(w, s.body)
+		// Ошибку записи в ResponseWriter обработать некуда: тестовый сервер, тело уходит клиенту.
+		_, _ = io.WriteString(w, s.body)
 		if s.abort {
 			w.(http.Flusher).Flush()
 			panic(http.ErrAbortHandler)

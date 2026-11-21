@@ -85,7 +85,9 @@ func run(c config, log *slog.Logger) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	for _, srv := range servers {
-		srv.Shutdown(shutdownCtx)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Error("ошибка остановки сервера", "err", err)
+		}
 	}
 	log.Info("остановлен")
 	return err
@@ -120,7 +122,8 @@ func newHandler(c config, f *fetcher, log *slog.Logger) http.Handler {
 			contentType = "application/json; charset=utf-8"
 		}
 		w.Header().Set("Content-Type", contentType)
-		w.Write([]byte(body))
+		// Ошибку записи в ResponseWriter обработать некуда: клиент уже получил заголовки.
+		_, _ = w.Write([]byte(body))
 	})
 	return mux
 }
@@ -139,7 +142,7 @@ func subscriptionID(sub, path string) (string, bool) {
 	return id, true
 }
 
-func healthz(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok\n")) }
+func healthz(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) }
 
 // healthcheck — для Docker: в distroless нет ни curl, ни wget.
 func healthcheck() error {
@@ -151,7 +154,7 @@ func healthcheck() error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("healthz: %s", resp.Status)
 	}
